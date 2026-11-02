@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>银行家算法模拟器（历史回放与死锁实验版）</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body class="light-theme">
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-icon">🔐</div>
+                <div class="brand-text">
+                    <h1>银行家算法模拟器</h1>
+                    <span class="version">历史回放与死锁实验 · 可视化仪表盘 v2.0</span>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="status-item status-indicator-wrapper">
+                    <span class="status-label">系统状态</span>
+                    <div class="indicator" id="system-status-indicator">
+                        <span class="indicator-light" id="status-light"></span>
+                        <span class="indicator-text" id="status-text">安全</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 工具栏 -->
+        <nav class="toolbar">
+            <div class="toolbar-left">
+                <button id="btn-settings" class="btn btn-tool">
+                    <span class="btn-icon">⚙️</span>
+                    <span>系统设置</span>
+                </button>
+                <button id="btn-reset" class="btn btn-tool">
+                    <span class="btn-icon">🔄</span>
+                    <span>重置系统</span>
+                </button>
+            </div>
+            <div class="toolbar-center">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="cb-banker" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">启用银行家算法</span>
+                </label>
+            </div>
+            <div class="toolbar-right">
+                <button id="btn-random-run" class="btn btn-tool btn-warning">
+                    <span class="btn-icon">🎲</span>
+                    <span>自动随机实验</span>
+                </button>
+                <button id="btn-detect" class="btn btn-tool btn-danger">
+                    <span class="btn-icon">🔍</span>
+                    <span>死锁检测</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- 操作仪表盘 -->
+        <section class="dashboard-section" id="dashboard-section">
+            <div class="dashboard-status">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="dashboard-progress"></div>
+                </div>
+                <div class="dashboard-text">
+                    <div class="dashboard-step" id="dashboard-step">等待操作...</div>
+                    <div class="dashboard-meaning" id="dashboard-meaning">点击上方按钮开始一次资源分配或死锁检测</div>
+                </div>
+            </div>
+            <div class="dashboard-details hidden" id="dashboard-details"></div>
+        </section>
+
+        <!-- 关键指标卡片 -->
+        <section class="metrics-row">
+            <div class="metric-card" id="metric-status">
+                <div class="metric-icon">🛡️</div>
+                <div class="metric-content">
+                    <span class="metric-label">系统状态</span>
+                    <span class="metric-value" id="metric-status-value">安全</span>
+                    <span class="metric-sub" id="metric-status-sub">存在安全序列</span>
+                </div>
+            </div>
+            <div class="metric-card" id="metric-allocated">
+                <div class="metric-icon">📊</div>
+                <div class="metric-content">
+                    <span class="metric-label">已分配资源</span>
+                    <span class="metric-value" id="metric-allocated-value">0</span>
+                    <div class="metric-bar">
+                        <div class="metric-fill" id="metric-allocated-fill"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-card" id="metric-available">
+                <div class="metric-icon">💾</div>
+                <div class="metric-content">
+                    <span class="metric-label">剩余可用资源</span>
+                    <span class="metric-value" id="metric-available-value">0</span>
+                    <span class="metric-sub" id="metric-available-sub">总量 0</span>
+                </div>
+            </div>
+            <div class="metric-card" id="metric-completion">
+                <div class="metric-icon">✅</div>
+                <div class="metric-content">
+                    <span class="metric-label">进程完成率</span>
+                    <span class="metric-value" id="metric-completion-value">0%</span>
+                    <div class="metric-ring">
+                        <svg viewBox="0 0 36 36">
+                            <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path class="ring-fill" id="completion-ring" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="metric-card" id="metric-last-op">
+                <div class="metric-icon">📝</div>
+                <div class="metric-content">
+                    <span class="metric-label">最近操作</span>
+                    <span class="metric-value" id="metric-last-op-value">-</span>
+                    <span class="metric-sub" id="metric-last-op-sub">等待操作</span>
+                </div>
+            </div>
+        </section>
+
+        <div class="message-area" id="message-area"></div>
+
+        <!-- 主内容区 -->
+        <main class="content-row">
+            <!-- 左栏：矩阵 -->
+            <section class="panel panel-left">
+                <div class="panel-header">
+                    <h2 class="panel-title">资源矩阵</h2>
+                    <div class="panel-tags">
+                        <span class="tag" id="tag-process-count">进程 0</span>
+                        <span class="tag" id="tag-resource-count">资源 0</span>
+                    </div>
+                </div>
+                <div class="matrix-grid">
+                    <div class="matrix-card">
+                        <h3>Max 矩阵</h3>
+                        <div class="table-wrapper">
+                            <table class="matrix-table" id="table-max">
+                                <thead><tr><th>进程</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-card">
+                        <h3>Allocation 矩阵</h3>
+                        <div class="table-wrapper">
+                            <table class="matrix-table" id="table-allocation">
+                                <thead><tr><th>进程</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-card">
+                        <h3>Need 矩阵</h3>
+                        <div class="table-wrapper">
+                            <table class="matrix-table" id="table-need">
+                                <thead><tr><th>进程</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 中栏：Available 与状态 -->
+            <section class="panel panel-center">
+                <div class="panel-header">
+                    <h2 class="panel-title">可用资源监控</h2>
+                </div>
+                <div class="available-bars" id="available-bars">
+                    <!-- 动态生成 -->
+                </div>
+                <div class="status-detail">
+                    <h3>安全序列</h3>
+                    <div class="safe-sequence" id="safe-sequence">-</div>
+                </div>
+                <div class="status-detail">
+                    <h3>死锁进程</h3>
+                    <div class="deadlock-list" id="deadlock-processes">无</div>
+                </div>
+            </section>
+
+            <!-- 右栏：资源请求 -->
+            <section class="panel panel-right">
+                <div class="panel-header">
+                    <h2 class="panel-title">资源请求</h2>
+                </div>
+                <div class="request-form">
+                    <div class="form-group">
+                        <label>选择进程</label>
+                        <select id="select-process">
+                            <option value="0">P0</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="request-inputs">
+                        <label>请求资源</label>
+                        <div class="request-inputs-grid"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button id="btn-request" class="btn btn-primary">
+                            <span class="btn-icon">➕</span>
+                            <span>申请资源</span>
+                        </button>
+                        <button id="btn-release" class="btn btn-secondary">
+                            <span class="btn-icon">🗑️</span>
+                            <span>释放进程资源</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部：图表与日志 -->
+        <section class="bottom-row">
+            <div class="panel chart-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">📈 历史趋势图</h2>
+                    <div class="chart-controls">
+                        <button class="chart-mode-btn active" data-mode="safety">安全状态</button>
+                        <button class="chart-mode-btn" data-mode="allocation">资源分配</button>
+                        <button class="chart-mode-btn" data-mode="available">可用资源</button>
+                    </div>
+                </div>
+                <div id="history-chart" class="chart-container"></div>
+            </div>
+            <div class="panel log-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">📋 审计日志流</h2>
+                    <div class="log-actions">
+                        <button id="btn-clear-logs" class="btn btn-icon-action" title="清空日志">🗑️</button>
+                        <button id="btn-export-logs" class="btn btn-icon-action" title="导出日志">📥</button>
+                    </div>
+                </div>
+                <div class="log-stream" id="log-stream"></div>
+                <textarea id="log-area" readonly class="hidden-log"></textarea>
+            </div>
+        </section>
+
+        <!-- 历史时间轴 -->
+        <section class="timeline-section">
+            <div class="panel-header">
+                <h2 class="panel-title">⏱️ 历史时间轴回放</h2>
+            </div>
+            <div class="timeline-controls">
+                <input type="range" id="timeline-slider" min="1" max="1" value="1">
+                <button id="btn-back-latest" class="btn btn-tool">回到最新</button>
+            </div>
+            <div class="timeline-info">
+                <span class="badge" id="timeline-current">操作 #1</span>
+                <span id="timeline-description">-</span>
+                <span class="badge" id="timeline-status">-</span>
+            </div>
+            <div id="history-mode-indicator" class="hidden history-mode-alert">
+                ⚠ 处于历史回溯模式，实时操作已禁用
+            </div>
+        </section>
+
+        <!-- 趣味解读（可折叠） -->
+        <section class="fun-section collapsed" id="fun-section">
+            <div class="fun-section-header" id="fun-toggle">
+                <h2>🎮 生活化趣味解读：银行家算法就在身边</h2>
+                <span class="collapse-icon">▼</span>
+            </div>
+            <div class="fun-section-body">
+                <p class="fun-intro">不需要懂代码，也能理解银行家算法的智慧。我们把算法换成日常生活中的场景，一看就懂。</p>
+                
+                <div class="fun-tabs">
+                    <button class="fun-tab active" data-tab="bank">银行放贷</button>
+                    <button class="fun-tab" data-tab="restaurant">餐厅等位</button>
+                    <button class="fun-tab" data-tab="project">项目排期</button>
+                </div>
+                
+                <div class="fun-content active" id="fun-bank">
+                    <div class="fun-scenario">
+                        <h3>场景：小镇银行</h3>
+                        <p>银行共有 <strong>100 万现金</strong>。三位客户 A、B、C 来贷款，他们最多分别需要 <strong>70 万、50 万、60 万</strong>。银行不会一次性把钱全借出去，而是每次借钱前都算一笔账：</p>
+                        <ul>
+                            <li>如果借给 A 20 万后，剩下的钱还能按某种顺序让 A、B、C 都借到最高额度并完成还款，就借。</li>
+                            <li>如果借出去后，发现无论怎么排顺序，总有人永远凑不齐最高额度（大家都僵住），就拒绝。</li>
+                        </ul>
+                        <div class="fun-case">
+                            <h4>实际案例</h4>
+                            <p>某城商行早上开门时有 100 万可贷资金。A 企业申请首笔 20 万周转（最高额度 70 万），B 个体户申请 30 万（最高额度 50 万），C 商户申请 40 万（最高额度 60 万）。三笔都批准后，银行只剩 10 万，但 C 还可能再借 20 万，A 还可能再借 50 万，B 还可能再借 20 万。如果银行家算法判断“未来可能无法同时满足所有人的最高额度”，就会拒绝其中某笔，避免所有客户都拿不到尾款而项目停摆。</p>
+                        </div>
+                        <p><strong>这就是银行家算法</strong>：它像一位谨慎的银行家，宁可少做一笔生意，也不让资金链断裂。</p>
+                    </div>
+                    <div class="fun-demo" id="fun-demo-bank">
+                        <h4>互动小演示</h4>
+                        <div class="fun-demo-status">
+                            <span>银行现金：<strong id="bank-cash">100</strong> 万</span>
+                            <span>A 已借：<strong id="bank-a">0</strong> 万 / 70 万</span>
+                            <span>B 已借：<strong id="bank-b">0</strong> 万 / 50 万</span>
+                            <span>C 已借：<strong id="bank-c">0</strong> 万 / 60 万</span>
+                        </div>
+                        <div class="fun-demo-buttons">
+                            <button class="btn" onclick="funBankLoan('A', 20)">A 借 20 万</button>
+                            <button class="btn" onclick="funBankLoan('B', 30)">B 借 30 万</button>
+                            <button class="btn" onclick="funBankLoan('C', 40)">C 借 40 万</button>
+                            <button class="btn btn-secondary" onclick="funBankReset()">重置</button>
+                            <button class="btn btn-answer" onclick="funBankShowAnswer()">查看答案</button>
+                        </div>
+                        <div class="fun-demo-result" id="bank-result">点击按钮，体验银行家如何决定是否放贷。</div>
+                    </div>
+                </div>
+                
+                <div class="fun-content" id="fun-restaurant">
+                    <div class="fun-scenario">
+                        <h3>场景：网红餐厅</h3>
+                        <p>餐厅有 <strong>10 张空桌</strong>。四组客人 A、B、C、D 来用餐，每组最多分别需要 <strong>5、4、4、3 张桌子</strong>拼桌。服务员在安排每一组入座前，都会快速心算：</p>
+                        <ul>
+                            <li>让这组客人坐这些桌子后，剩下的桌子是否还能按某种顺序满足所有已到场客人的最大需求？</li>
+                            <li>如果不行，就请这组客人稍等，避免所有桌子都被占住却谁也吃不上饭的混乱。</li>
+                        </ul>
+                        <div class="fun-case">
+                            <h4>实际案例</h4>
+                            <p>周末晚市，餐厅只剩 10 张可拼桌。A 大家庭最多要 5 桌、B 同学聚会最多 4 桌、C 公司聚餐最多 4 桌、D 生日宴最多 3 桌。如果服务员先把 A3+B2+C3+D2 共 10 桌全排出去，每组都还有“追加需求”没满足，而店里一张空桌都没有了——四组人互相等待对方先吃完离开，结果整晚翻台瘫痪。银行家算法会要求服务员在最后一步让 D 组先排队，保留缓冲。</p>
+                        </div>
+                        <p><strong>意义</strong>：合理预留资源，才能保证整晚翻台顺畅，而不是让所有客人都卡在门口。</p>
+                    </div>
+                    <div class="fun-demo" id="fun-demo-restaurant">
+                        <h4>互动小演示</h4>
+                        <div class="fun-demo-status">
+                            <span>空闲桌子：<strong id="restaurant-tables">10</strong> 张</span>
+                            <span>A 组已坐：<strong id="restaurant-a">0</strong> 张 / 最多 5 张</span>
+                            <span>B 组已坐：<strong id="restaurant-b">0</strong> 张 / 最多 4 张</span>
+                            <span>C 组已坐：<strong id="restaurant-c">0</strong> 张 / 最多 4 张</span>
+                            <span>D 组已坐：<strong id="restaurant-d">0</strong> 张 / 最多 3 张</span>
+                        </div>
+                        <div class="fun-demo-buttons">
+                            <button class="btn" onclick="funRestaurantSeat('A', 3)">A 组 3 桌入座</button>
+                            <button class="btn" onclick="funRestaurantSeat('B', 2)">B 组 2 桌入座</button>
+                            <button class="btn" onclick="funRestaurantSeat('C', 3)">C 组 3 桌入座</button>
+                            <button class="btn" onclick="funRestaurantSeat('D', 2)">D 组 2 桌入座</button>
+                            <button class="btn btn-secondary" onclick="funRestaurantReset()">重置</button>
+                            <button class="btn btn-answer" onclick="funRestaurantShowAnswer()">查看答案</button>
+                        </div>
+                        <div class="fun-demo-result" id="restaurant-result">点击按钮，体验服务员如何用银行家算法安排座位。<br><small>提示：尝试 A→B→C→D，看看最后一步会不会因为“死锁风险”被拒绝。</small></div>
+                    </div>
+                </div>
+                
+                <div class="fun-content" id="fun-project">
+                    <div class="fun-scenario">
+                        <h3>场景：项目团队协作</h3>
+                        <p>团队有 <strong>5 名工程师</strong>。三个项目 A、B、C 同时推进，最多分别需要 <strong>4、3、4 名工程师</strong>全职投入。项目经理在分配人力时：</p>
+                        <ul>
+                            <li>先给项目 A 加人，会不会导致后续项目 B、C 都因为缺人而互相等待？</li>
+                            <li>如果存在一种项目完成顺序，让所有人最终都能释放人力，就分配；否则暂缓。</li>
+                        </ul>
+                        <div class="fun-case">
+                            <h4>实际案例</h4>
+                            <p>sprint 周期只剩 5 名可用工程师。A 项目核心模块最多需 4 人、B 项目测试冲刺最多需 3 人、C 项目新功能最多需 4 人。如果项目经理先给 A 安排 2 人、B 安排 1 人、C 安排 2 人，5 人全部被占满，三个项目都还有后续人力缺口却无人释放，大家互相等待资源，sprint 必然延期。银行家算法会阻止最后这次加人，保留机动力量。</p>
+                        </div>
+                        <p><strong>现实效果</strong>：避免“每个人都在等别人”的停摆状态，提高团队整体吞吐量。</p>
+                    </div>
+                    <div class="fun-demo" id="fun-demo-project">
+                        <h4>互动小演示</h4>
+                        <div class="fun-demo-status">
+                            <span>空闲工程师：<strong id="project-engineers">5</strong> 人</span>
+                            <span>A 项目已投入：<strong id="project-a">0</strong> 人 / 最多 4 人</span>
+                            <span>B 项目已投入：<strong id="project-b">0</strong> 人 / 最多 3 人</span>
+                            <span>C 项目已投入：<strong id="project-c">0</strong> 人 / 最多 4 人</span>
+                        </div>
+                        <div class="fun-demo-buttons">
+                            <button class="btn" onclick="funProjectAssign('A', 2)">A 项目加 2 人</button>
+                            <button class="btn" onclick="funProjectAssign('B', 1)">B 项目加 1 人</button>
+                            <button class="btn" onclick="funProjectAssign('C', 2)">C 项目加 2 人</button>
+                            <button class="btn btn-secondary" onclick="funProjectReset()">重置</button>
+                            <button class="btn btn-answer" onclick="funProjectShowAnswer()">查看答案</button>
+                        </div>
+                        <div class="fun-demo-result" id="project-result">点击按钮，体验项目经理如何用银行家算法分配人力。<br><small>提示：尝试 A→B→C，看看最后一步会不会因为“死锁风险”被拒绝。</small></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 设置模态框 -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>⚙️ 系统设置</h2>
+                    <span class="close" id="close-modal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>资源种类数</label>
+                        <input type="number" id="input-resource-count" value="3" min="1" max="10">
+                    </div>
+                    <div class="form-group">
+                        <label>资源总量（空格分隔）</label>
+                        <input type="text" id="input-total-resources" value="10 5 7">
+                    </div>
+                    <div class="form-group">
+                        <label>进程数</label>
+                        <input type="number" id="input-process-count" value="5" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>最大需求矩阵（每行空格分隔，空则随机生成）</label>
+                        <textarea id="input-max-matrix" rows="5" placeholder="示例：
+7 5 3
+3 2 2
+9 0 2
+2 2 2
+4 3 3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-apply-settings" class="btn btn-primary">应用设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
